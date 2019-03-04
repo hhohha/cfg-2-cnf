@@ -1,6 +1,9 @@
 import Data.List
+import Data.List.Split
 import Data.Char
 import System.Environment
+import System.Directory
+import System.IO  
 
 type Symbol = String
 type Rule = (Symbol, [Symbol])
@@ -13,6 +16,12 @@ data Grammar = Grammar {
     rules :: [Rule]
 } deriving (Show)
 
+-- the grammar on the input needs to meet the following rules:
+-- 1. non-terminals are upper case symbols
+-- 2. terminals are lower case symbols
+-- 3. starting symbol is a non-terminal
+-- 4. rules are in the valid form: the left side of the rule is a known non-terminals
+--    and the right side contains known terminals/non-terminals
 newGrammar :: [Symbol] -> [Symbol] -> Symbol -> [Rule] -> Grammar
 newGrammar nts ts start rs
     | not (all isUpper $ concat nts) = error "bad non-term"
@@ -30,28 +39,13 @@ validateRules (x:xs) nts ts =
 
 ---------------------------------------------------------
 
---removeSimpleRules :: Grammar -> Grammar
---removeSimpleRules g = newGrammar (nterms g) (terms g) (start g) (transformRules (rules g)  (getReachableNonTerms (nterms g) (rules g)))
+removeSimpleRules :: Grammar -> Grammar
+removeSimpleRules g = newGrammar
+    (nterms g)
+    (terms g)
+    (start g)
+    (transformRules (rules g) (getReachableNonTerms (nterms g) (rules g)))
 
-findSetNStep :: [Symbol] -> [Rule] -> [Symbol]
-findSetNStep symbs [] = symbs
-findSetNStep symbs (r:rs) =
-    (if fst r `elem` symbs && isRuleSimple r && not ((head $ snd r) `elem` symbs)
-    then snd r
-    else [])
-    ++ findSetNStep symbs rs
-
-findSetN :: [Symbol] -> [Rule] -> [Symbol]
-findSetN symbs rs =
-    if symbs == findSetNStep symbs rs
-    then symbs
-    else findSetN (findSetNStep symbs rs) rs
-
-getReachableNonTerms :: [Symbol] -> [Rule] -> [NSet]
-getReachableNonTerms [] _ = []
-getReachableNonTerms (nt:nts) rs = [(nt, findSetN [nt] rs)] ++ getReachableNonTerms nts rs
-
--- params: 1. original rule list  2. list of Nas
 transformRules :: [Rule] -> [NSet] -> [Rule]
 transformRules [] _ = []
 transformRules (r:rs) sets =
@@ -64,13 +58,35 @@ generateNewRules :: Rule -> [Symbol] -> [Rule]
 generateNewRules r [] = []
 generateNewRules r (x:xs) = [(x, snd r)] ++ generateNewRules r xs
 
+getReachableNonTerms :: [Symbol] -> [Rule] -> [NSet]
+getReachableNonTerms [] _ = []
+getReachableNonTerms (nt:nts) rs = [(nt, findSetN [nt] rs)] ++ getReachableNonTerms nts rs
+
+findSetN :: [Symbol] -> [Rule] -> [Symbol]
+findSetN symbs rs =
+    if symbs == findSetNStep symbs rs
+    then symbs
+    else findSetN (findSetNStep symbs rs) rs
+    
+findSetNStep :: [Symbol] -> [Rule] -> [Symbol]
+findSetNStep symbs [] = symbs
+findSetNStep symbs (r:rs) =
+    (if fst r `elem` symbs && isRuleSimple r && not ((head $ snd r) `elem` symbs)
+    then snd r
+    else [])
+    ++ findSetNStep symbs rs
+
 isRuleSimple :: Rule -> Bool
 isRuleSimple r = length (snd r) == 1 && all isUpper (head $ snd r)
 
 ---------------------------------------------------------
 
---transformToCNF :: Grammar -> Grammar
---transformToCNF g = newGrammar (getNonTerminals  (transformRulesToCNF (rules g)) (nterms g)) (terms g) (start g) (transformRulesToCNF (rules g))
+transformToCNF :: Grammar -> Grammar
+transformToCNF g = newGrammar
+    (getNonTerminals  (transformRulesToCNF (rules g)) (nterms g))
+    (terms g)
+    (start g)
+    (transformRulesToCNF (rules g))
 
 getNonTerminals :: [Rule] -> [Symbol] -> [Symbol]
 getNonTerminals rs symbs = union (map fst rs) symbs
@@ -109,28 +125,37 @@ commify s = if all isLower s then s ++ "'" else s
 
 ------------------------------
 
+readGrammar :: String -> Grammar
+readGrammar s = newGrammar
+    (splitOn "," (lines s !! 0))
+    (splitOn "," (lines s !! 1))
+    (lines s !! 2)
+    (map (\x -> (head x, map (:[]) $ concat (tail x))) (map (splitOn "->") (drop 3 $ lines s)))
+
 readAndPrint :: String -> String
-readAndPrint s = "readAndPrint"
+readAndPrint s = show $ readGrammar s
 
-removeSimpleRules :: String -> String
-removeSimpleRules s = "removeSimpleRules"
+removeSimpleRulesStr :: String -> String
+removeSimpleRulesStr s = show $ removeSimpleRules $ readGrammar s 
 
-transformToCNF :: String -> String
-transformToCNF s = "transformToCNF"
+transformToCNFStr :: String -> String
+transformToCNFStr s = show $ transformToCNF $ removeSimpleRules $ readGrammar s
 
-getInput :: [String] -> String
+getInput :: String -> String
 getInput s = "input"
 
-dispatch :: [(String, [String] -> IO ())]
-dispatch =  [("-i", readAndPrint), ("-1", removeSimpleRules), ("-2", transformToCNF)]
+dispatch :: [(String, String -> String)]
+dispatch =  [("-i", readAndPrint), ("-1", removeSimpleRulesStr), ("-2", transformToCNFStr)]
 
 
 main = do
-    args <- getArgs
-    let inputStr = getInput args
+    (command:args) <- getArgs
     
+    let fileName = args !! 0
+    contents <- readFile fileName  
+    
+    let (Just action) = lookup command dispatch
+    
+    putStrLn $ action contents 
 
-    let action = lookup command dispatch
-    if action == Nothing
-    then error "wrong action"
-    else putStrLn $ action inputStr
+
