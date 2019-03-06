@@ -9,6 +9,8 @@ type Symbol = String
 type Rule = (Symbol, [Symbol])
 type NSet = (Symbol, [Symbol])
 
+instance Show Grammar where show = showGrammar
+
 data Grammar = Grammar {
     nterms :: [Symbol],
     terms :: [Symbol],
@@ -18,31 +20,28 @@ data Grammar = Grammar {
 
 showGrammar :: Grammar -> String
 showGrammar g = intercalate "\n" [
-    (intercalate "," (nterms g)), 
+    (intercalate "," (nterms g)),
     (intercalate "," (terms g)),
     (start g),
     intercalate "\n" (map (\x -> fst x ++ "->" ++ (concat $ snd x)) (rules g))
     ]
 
-instance Show Grammar where show = showGrammar
-
--- the grammar on the input needs to meet the following rules:
--- 1. non-terminals are upper case symbols
--- 2. terminals are lower case symbols
--- 3. starting symbol is a non-terminal
--- 4. rules are in the valid form: the left side of the rule is a known non-terminals
---    and the right side contains known terminals/non-terminals
+-- creates grammar and checks that its input format
+-- is used when reading input data
 newGrammar :: [Symbol] -> [Symbol] -> Symbol -> [Rule] -> Grammar
 newGrammar nts ts start rs
-    | not (all isUpper $ concat nts) = error "bad non-term"
-    | not (all isLower $ concat ts) = error "bad term"
-    | not (start `elem` nts) = error "s not in nterms"
-    | not (validateRules rs nts ts) = error "bad rules"
+    | not (all isUpper $ concat nts) = error "wrong input format of the non-terminals"
+    | not (all isLower $ concat ts) = error "wrong input format of the terminals"
+    | not (start `elem` nts) = error "wrong input format, unknown starting symbol"
+    | not (validateRules rs nts ts) = error "wrong input format of the rules"
     | otherwise = Grammar nts ts start rs
 
+-- is used for creating transformad grammars
+-- creates grammar with no checks (the format of the transformed grammar can be different anyway)
 newGrammarNoChecks :: [Symbol] -> [Symbol] -> Symbol -> [Rule] -> Grammar
 newGrammarNoChecks nts ts start rs = Grammar nts ts start rs
 
+-- checks the input format of the rules
 validateRules :: [Rule] -> [Symbol] -> [Symbol] -> Bool
 validateRules [] _ _ = True
 validateRules (x:xs) nts ts =
@@ -50,10 +49,9 @@ validateRules (x:xs) nts ts =
     && intersect (snd x) (nts ++ ts) == snd x
     && validateRules xs nts ts
 
----------------------------------------------------------
-
+-- generates new grammar with transformed rules so that simple rules are eliminated
 removeSimpleRules :: Grammar -> Grammar
-removeSimpleRules g = newGrammar
+removeSimpleRules g = newGrammarNoChecks
     (nterms g)
     (terms g)
     (start g)
@@ -71,24 +69,31 @@ generateNewRules :: Rule -> [Symbol] -> [Rule]
 generateNewRules r [] = []
 generateNewRules r (x:xs) = [(x, snd r)] ++ generateNewRules r xs
 
+-- finds for every non-terminal a NSet - set of non-terminals
+-- which are reachable by applications of simple rules
 getReachableNonTerms :: [Symbol] -> [Rule] -> [NSet]
 getReachableNonTerms [] _ = []
 getReachableNonTerms (nt:nts) rs = [(nt, findSetN [nt] rs)] ++ getReachableNonTerms nts rs
 
 findSetN :: [Symbol] -> [Rule] -> [Symbol]
 findSetN symbs rs =
-    if symbs == findSetNStep symbs rs
+    if symbs == nextIteration
     then symbs
-    else findSetN (findSetNStep symbs rs) rs
+    else findSetN nextIteration rs
+        where nextIteration = findSetNStep symbs rs
 
 findSetNStep :: [Symbol] -> [Rule] -> [Symbol]
 findSetNStep symbs [] = symbs
 findSetNStep symbs (r:rs) =
-    (if fst r `elem` symbs && isRuleSimple r && not ((head $ snd r) `elem` symbs)
+    (if
+        fst r `elem` symbs &&
+        isRuleSimple r &&
+        not ((head $ snd r) `elem` symbs)
     then snd r
     else [])
     ++ findSetNStep symbs rs
 
+-- a simple rule is in form A->B where B is a non-terminal
 isRuleSimple :: Rule -> Bool
 isRuleSimple r = length (snd r) == 1 && all isUpper (head $ snd r)
 
@@ -135,28 +140,26 @@ generateFinal s = if all isLower s then [(s ++ "'", [s])] else []
 commify :: Symbol -> Symbol
 commify s = if all isLower s then s ++ "'" else s
 
+--------------------------------
 
-------------------------------
-
-readGrammar :: String -> Grammar
-readGrammar s = newGrammar
+readGrammarFromStr :: String -> Grammar
+readGrammarFromStr s = newGrammar
     (splitOn "," (lines s !! 0))
     (splitOn "," (lines s !! 1))
     (lines s !! 2)
     (map (\x -> (head x, map (:[]) $ concat (tail x))) (map (splitOn "->") (drop 3 $ lines s)))
 
-readAndPrint :: String -> String
-readAndPrint s = show $ readGrammar s
+readAndPrintStr :: String -> String
+readAndPrintStr s = show $ readGrammarFromStr s
 
 removeSimpleRulesStr :: String -> String
-removeSimpleRulesStr s = show $ removeSimpleRules $ readGrammar s
+removeSimpleRulesStr s = show $ removeSimpleRules $ readGrammarFromStr s
 
 transformToCNFStr :: String -> String
-transformToCNFStr s = show $ transformToCNF $ removeSimpleRules $ readGrammar s
+transformToCNFStr s = show $ transformToCNF $ removeSimpleRules $ readGrammarFromStr s
 
 dispatch :: [(String, String -> String)]
-dispatch =  [("-i", readAndPrint), ("-1", removeSimpleRulesStr), ("-2", transformToCNFStr)]
-
+dispatch =  [("-i", readAndPrintStr), ("-1", removeSimpleRulesStr), ("-2", transformToCNFStr)]
 
 main = do
     args <- getArgs
@@ -164,7 +167,7 @@ main = do
     then putStrLn "BAD ARGS"
     else do
         let command = head args
-            
+
         contents <- (if length args == 2
                      then readFile $ last args
                      else getContents)
