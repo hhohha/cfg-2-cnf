@@ -3,7 +3,7 @@ import Data.List.Split
 import Data.Char
 import System.Environment
 import System.Directory
-import System.IO  
+import System.IO
 
 type Symbol = String
 type Rule = (Symbol, [Symbol])
@@ -14,7 +14,17 @@ data Grammar = Grammar {
     terms :: [Symbol],
     start :: Symbol,
     rules :: [Rule]
-} deriving (Show)
+}
+
+showGrammar :: Grammar -> String
+showGrammar g = intercalate "\n" [
+    (intercalate "," (nterms g)), 
+    (intercalate "," (terms g)),
+    (start g),
+    intercalate "\n" (map (\x -> fst x ++ "->" ++ (concat $ snd x)) (rules g))
+    ]
+
+instance Show Grammar where show = showGrammar
 
 -- the grammar on the input needs to meet the following rules:
 -- 1. non-terminals are upper case symbols
@@ -29,6 +39,9 @@ newGrammar nts ts start rs
     | not (start `elem` nts) = error "s not in nterms"
     | not (validateRules rs nts ts) = error "bad rules"
     | otherwise = Grammar nts ts start rs
+
+newGrammarNoChecks :: [Symbol] -> [Symbol] -> Symbol -> [Rule] -> Grammar
+newGrammarNoChecks nts ts start rs = Grammar nts ts start rs
 
 validateRules :: [Rule] -> [Symbol] -> [Symbol] -> Bool
 validateRules [] _ _ = True
@@ -67,7 +80,7 @@ findSetN symbs rs =
     if symbs == findSetNStep symbs rs
     then symbs
     else findSetN (findSetNStep symbs rs) rs
-    
+
 findSetNStep :: [Symbol] -> [Rule] -> [Symbol]
 findSetNStep symbs [] = symbs
 findSetNStep symbs (r:rs) =
@@ -82,14 +95,14 @@ isRuleSimple r = length (snd r) == 1 && all isUpper (head $ snd r)
 ---------------------------------------------------------
 
 transformToCNF :: Grammar -> Grammar
-transformToCNF g = newGrammar
+transformToCNF g = newGrammarNoChecks
     (getNonTerminals  (transformRulesToCNF (rules g)) (nterms g))
     (terms g)
     (start g)
     (transformRulesToCNF (rules g))
 
 getNonTerminals :: [Rule] -> [Symbol] -> [Symbol]
-getNonTerminals rs symbs = union (map fst rs) symbs
+getNonTerminals rs symbs = map head $ group $ sort (map fst rs ++ symbs)
 
 transformRulesToCNF :: [Rule] -> [Rule]
 transformRulesToCNF [] = []
@@ -136,26 +149,27 @@ readAndPrint :: String -> String
 readAndPrint s = show $ readGrammar s
 
 removeSimpleRulesStr :: String -> String
-removeSimpleRulesStr s = show $ removeSimpleRules $ readGrammar s 
+removeSimpleRulesStr s = show $ removeSimpleRules $ readGrammar s
 
 transformToCNFStr :: String -> String
 transformToCNFStr s = show $ transformToCNF $ removeSimpleRules $ readGrammar s
-
-getInput :: String -> String
-getInput s = "input"
 
 dispatch :: [(String, String -> String)]
 dispatch =  [("-i", readAndPrint), ("-1", removeSimpleRulesStr), ("-2", transformToCNFStr)]
 
 
 main = do
-    (command:args) <- getArgs
-    
-    let fileName = args !! 0
-    contents <- readFile fileName  
-    
-    let (Just action) = lookup command dispatch
-    
-    putStrLn $ action contents 
+    args <- getArgs
+    if length args < 1 || length args > 2
+    then putStrLn "BAD ARGS"
+    else do
+        let command = head args
+            
+        contents <- (if length args == 2
+                     then readFile $ last args
+                     else getContents)
 
+        case lookup command dispatch of
+            Nothing -> putStrLn "ERROR"
+            Just a -> putStrLn $ a contents
 
