@@ -118,24 +118,25 @@ parseRule r
     | (length $ snd r) == 1 && all isLower (head $ snd r) = [r]  -- r is like A -> a
     | (length $ snd r) == 2 && (all isUpper $ concat (snd r)) = [r] -- r is like A -> BC
     | (length $ snd r) == 2 = [(fst r, map commify (snd r))]
-        ++ generateFinal (snd r !! 0)
-        ++ generateFinal (snd r !! 1)-- r is like A -> alpha where len(alpha) == 2
-    | (length $ snd r) > 2 = [(fst r, [commify (head $ snd r)] ++ ["<" ++ (concat $ tail $ snd r) ++ ">"])]
-        ++ generateFinal (head $ snd r)
+        ++ generateRule (snd r !! 0)
+        ++ generateRule (snd r !! 1)-- r is like A -> alpha where len(alpha) == 2
+    | (length $ snd r) > 2 =
+        [(fst r, [commify (head $ snd r)] ++ ["<" ++ (concat $ tail $ snd r) ++ ">"])]
+        ++ generateRule (head $ snd r)
         ++ generateCNFRules (concat $ tail $ snd r) -- r is like A -> alpha where len(alpha) > 2
     | otherwise = error "" -- there should be no other rule
 
 generateCNFRules :: String -> [Rule]
 generateCNFRules rs
     | length rs > 2 = [("<" ++ rs ++ ">", [commify [head rs], "<" ++ tail rs ++ ">"])]
-        ++ generateFinal ([head rs])
+        ++ generateRule ([head rs])
         ++ generateCNFRules (tail rs)
     | otherwise = [("<" ++ rs ++ ">", [commify [head rs] ++ commify (tail rs)])]
-        ++ generateFinal ([rs !! 0])
-        ++ generateFinal ([rs !! 1])
+        ++ generateRule ([rs !! 0])
+        ++ generateRule ([rs !! 1])
 
-generateFinal :: Symbol -> [Rule]
-generateFinal s = if all isLower s then [(s ++ "'", [s])] else []
+generateRule :: Symbol -> [Rule]
+generateRule s = if all isLower s then [(s ++ "'", [s])] else []
 
 commify :: Symbol -> Symbol
 commify s = if all isLower s then s ++ "'" else s
@@ -143,11 +144,10 @@ commify s = if all isLower s then s ++ "'" else s
 --------------------------------
 
 readGrammarFromStr :: String -> Grammar
-readGrammarFromStr s = newGrammar
-    (splitOn "," (lines s !! 0))
-    (splitOn "," (lines s !! 1))
-    (lines s !! 2)
-    (map (\x -> (head x, map (:[]) $ concat (tail x))) (map (splitOn "->") (drop 3 $ lines s)))
+readGrammarFromStr s =
+    let (l1:l2:l3:ls) = lines s
+    in newGrammar (splitOn "," l1) (splitOn "," l2) l3
+        (map (\x -> (head x, map (:[]) $ concat (tail x))) (map (splitOn "->") ls))
 
 readAndPrintStr :: String -> String
 readAndPrintStr s = show $ readGrammarFromStr s
@@ -175,4 +175,3 @@ main = do
         case lookup command dispatch of
             Nothing -> putStrLn "ERROR"
             Just a -> putStrLn $ a contents
-
