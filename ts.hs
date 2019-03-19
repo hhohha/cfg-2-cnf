@@ -113,40 +113,61 @@ transformRulesToCNF :: [Rule] -> [Rule]
 transformRulesToCNF [] = []
 transformRulesToCNF (r:rs) = parseRule r ++ transformRulesToCNF rs
 
+-- takes one rule and generates corresponding rules based on the CNF algorithm
 parseRule :: Rule -> [Rule]
 parseRule r
-    | (length $ snd r) == 1 && all isLower (head $ snd r) = [r]  -- r is like A -> a
-    | (length $ snd r) == 2 && (all isUpper $ concat (snd r)) = [r] -- r is like A -> BC
+    -- r is like A -> a, just keep this rule
+    | (length $ snd r) == 1 && all isLower (head $ snd r) = [r]
+    
+    -- r is like A -> BC, just keep this rule
+    | (length $ snd r) == 2 && (all isUpper $ concat (snd r)) = [r] 
+    
+    -- r is like A -> bc, we need to generate (1) A -> b'c' and (2) terminal rules (a' -> a)
     | (length $ snd r) == 2 = [(fst r, map commify (snd r))]
-        ++ generateRule (snd r !! 0)
-        ++ generateRule (snd r !! 1)-- r is like A -> alpha where len(alpha) == 2
+        ++ generateTerminalRule (snd r !! 0)
+        ++ generateTerminalRule (snd r !! 1)
+        
+    -- r is like A -> abcd, we need to generate (1) A -> a'<bcd> and (2) terminal rule (a' -> a)
+    -- and (3) rules which decompose the <bcd> non-terminal
     | (length $ snd r) > 2 =
         [(fst r, [commify (head $ snd r)] ++ ["<" ++ (concat $ tail $ snd r) ++ ">"])]
-        ++ generateRule (head $ snd r)
-        ++ generateCNFRules (concat $ tail $ snd r) -- r is like A -> alpha where len(alpha) > 2
-    | otherwise = error "" -- there should be no other rule
+        ++ generateTerminalRule (head $ snd r)
+        ++ parseComposedNonTerm (concat $ tail $ snd r) 
+        
+    -- there should be no other type of rule
+    | otherwise = error ("bad rule: " ++ show r)
 
-generateCNFRules :: String -> [Rule]
-generateCNFRules rs
+-- parse the non-terminal in form <abcd> and return list of rules
+parseComposedNonTerm :: String -> [Rule]
+parseComposedNonTerm rs
+    -- if non-terminal len is > 2, we need (1) <ABCD> -> a'<BCD> and (2) terminal rule a' -> a
+    -- and (3) further decompose remaining non-terminal <BCD>
     | length rs > 2 = [("<" ++ rs ++ ">", [commify [head rs], "<" ++ tail rs ++ ">"])]
-        ++ generateRule ([head rs])
-        ++ generateCNFRules (tail rs)
-    | otherwise = [("<" ++ rs ++ ">", [commify [head rs] ++ commify (tail rs)])]
-        ++ generateRule ([rs !! 0])
-        ++ generateRule ([rs !! 1])
+        ++ generateTerminalRule ([head rs])
+        ++ parseComposedNonTerm (tail rs)
+        
+    -- if non-terminal len is 2, (A -> <BC>) we need to generate (1) <BC> -> BC and
+    -- (2) terminal rules (b' -> b)
+    | length rs == 2 = [("<" ++ rs ++ ">", [commify [head rs] ++ commify (tail rs)])]
+        ++ generateTerminalRule ([rs !! 0])
+        ++ generateTerminalRule ([rs !! 1])
+        
+    -- no other rule is possible here
+    | otherwise = error ("bad rule: " ++ show rs)
 
-generateRule :: Symbol -> [Rule]
-generateRule s = if all isLower s then [(s ++ "'", [s])] else []
+-- generates rule for terminal in form: a' -> a
+-- if the input is non-terminal, no rule is needed
+generateTerminalRule :: Symbol -> [Rule]
+generateTerminalRule s = if all isLower s then [(s ++ "'", [s])] else []
 
+-- adds comma to terminals only, ignores non-terminals
 commify :: Symbol -> Symbol
 commify s = if all isLower s then s ++ "'" else s
-
---------------------------------
 
 readGrammarFromStr :: String -> Grammar
 readGrammarFromStr s =
     let (l1:l2:l3:ls) = lines s
-    in newGrammar (splitOn "," l1) (splitOn "," l2) l3
+        in newGrammar (splitOn "," l1) (splitOn "," l2) l3
         (map (\x -> (head x, map (:[]) $ concat (tail x))) (map (splitOn "->") ls))
 
 readAndPrintStr :: String -> String
@@ -164,7 +185,7 @@ dispatch =  [("-i", readAndPrintStr), ("-1", removeSimpleRulesStr), ("-2", trans
 main = do
     args <- getArgs
     if length args < 1 || length args > 2
-    then putStrLn "BAD ARGS"
+    then putStrLn "bad arguments"
     else do
         let command = head args
 
@@ -173,5 +194,5 @@ main = do
                      else getContents)
 
         case lookup command dispatch of
-            Nothing -> putStrLn "ERROR"
+            Nothing -> putStrLn "bad arguments"
             Just a -> putStrLn $ a contents
