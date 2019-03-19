@@ -164,20 +164,20 @@ generateTerminalRule s = if all isLower s then [(s ++ "'", [s])] else []
 commify :: Symbol -> Symbol
 commify s = if all isLower s then s ++ "'" else s
 
-readGrammarFromStr :: String -> Grammar
-readGrammarFromStr s =
-    let (l1:l2:l3:ls) = lines s
-        in newGrammar (splitOn "," l1) (splitOn "," l2) l3
+readGrammarFromStr :: [String] -> Grammar
+readGrammarFromStr (l1:l2:l3:ls) =
+    newGrammar (splitOn "," l1) (splitOn "," l2) l3
         (map (\x -> (head x, map (:[]) $ concat (tail x))) (map (splitOn "->") ls))
+readGrammarFromStr _ = error "bad input format"
 
 readAndPrintStr :: String -> String
-readAndPrintStr s = show $ readGrammarFromStr s
+readAndPrintStr s = show $ readGrammarFromStr $ lines s
 
 removeSimpleRulesStr :: String -> String
-removeSimpleRulesStr s = show $ removeSimpleRules $ readGrammarFromStr s
+removeSimpleRulesStr s = show $ removeSimpleRules $ readGrammarFromStr $ lines s
 
 transformToCNFStr :: String -> String
-transformToCNFStr s = show $ transformToCNF $ removeSimpleRules $ readGrammarFromStr s
+transformToCNFStr s = show $ transformToCNF $ removeSimpleRules $ readGrammarFromStr $ lines s
 
 dispatch :: [(String, String -> String)]
 dispatch =  [("-i", readAndPrintStr), ("-1", removeSimpleRulesStr), ("-2", transformToCNFStr)]
