@@ -6,11 +6,16 @@ import System.Directory
 import System.IO
 
 type Symbol = String
+
+-- non-terminal and list of symbols on the right side
 type Rule = (Symbol, [Symbol])
+
+-- tuple of non-terminal and it's set of reachable symbols by single rules
 type NSet = (Symbol, [Symbol])
 
-instance Show Grammar where show = showGrammar
 
+-- grammar is: (1.) set of non-terminals, (2.) set of terminals
+-- (3.) starting non-terminal, (4.) set of rules
 data Grammar = Grammar {
     nterms :: [Symbol],
     terms :: [Symbol],
@@ -18,6 +23,10 @@ data Grammar = Grammar {
     rules :: [Rule]
 }
 
+-- define how to stringify grammar
+instance Show Grammar where show = showGrammar
+
+-- stringify the grammar
 showGrammar :: Grammar -> String
 showGrammar g = intercalate "\n" [
     (intercalate "," (nterms g)),
@@ -57,6 +66,7 @@ removeSimpleRules g = newGrammarNoChecks
     (start g)
     (transformRules (rules g) (getReachableNonTerms (nterms g) (rules g)))
 
+-- applies NSet - the set of rules reachable by simple rules
 transformRules :: [Rule] -> [NSet] -> [Rule]
 transformRules [] _ = []
 transformRules (r:rs) sets =
@@ -124,7 +134,7 @@ parseRule r
         [(fst r, [commify (head $ snd r)] ++ ["<" ++ (concat $ tail $ snd r) ++ ">"])]
         ++ generateRule (head $ snd r)
         ++ generateCNFRules (concat $ tail $ snd r) -- r is like A -> alpha where len(alpha) > 2
-    | otherwise = error "" -- there should be no other rule
+    | otherwise = error "bad rules" -- there should be no other rule
 
 generateCNFRules :: String -> [Rule]
 generateCNFRules rs
@@ -164,7 +174,7 @@ dispatch =  [("-i", readAndPrintStr), ("-1", removeSimpleRulesStr), ("-2", trans
 main = do
     args <- getArgs
     if length args < 1 || length args > 2
-    then putStrLn "BAD ARGS"
+    then putStrLn "bad arguments"
     else do
         let command = head args
 
@@ -173,5 +183,5 @@ main = do
                      else getContents)
 
         case lookup command dispatch of
-            Nothing -> putStrLn "ERROR"
+            Nothing -> putStrLn "bad arguments"
             Just a -> putStrLn $ a contents
