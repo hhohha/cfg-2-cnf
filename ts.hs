@@ -28,15 +28,15 @@ instance Show Grammar where show = showGrammar
 
 -- print the rule
 showRule :: Rule -> String
-showRule r = fst r ++ "->" ++ (concat $ snd r)
+showRule r = fst r ++ "->" ++ concat (snd r)
 
 -- stringify the grammar
 showGrammar :: Grammar -> String
 showGrammar g = intercalate "\n" [
-    (intercalate "," (nterms g)),
-    (intercalate "," (terms g)),
-    (start g),
-    intercalate "\n" (map (\x -> fst x ++ "->" ++ (concat $ snd x)) (rules g))
+    intercalate "," (nterms g),
+    intercalate "," (terms g),
+    start g,
+    intercalate "\n" (map (\x -> fst x ++ "->" ++ concat  (snd x)) (rules g))
     ]
 
 -- creates grammar and checks that its input format
@@ -45,25 +45,20 @@ newGrammar :: [Symbol] -> [Symbol] -> Symbol -> [Rule] -> Grammar
 newGrammar nts ts start rs
     | not (all isUpper $ concat nts) = error "wrong input format of the non-terminals"
     | not (all isLower $ concat ts) = error "wrong input format of the terminals"
-    | not (start `elem` nts) = error "wrong input format, unknown starting symbol"
+    | start `notElem` nts = error "wrong input format, unknown starting symbol"
     | not (all validateRule rs) = error "wrong input format of the rules"
     | otherwise = Grammar nts ts start rs
     where validateRule r = fst r `elem` nts && intersect (snd r) (nts ++ ts) == snd r
 
--- is used for creating transformad grammars
--- creates grammar with no checks (the format of the transformed grammar can be different anyway)
-newGrammarNoChecks :: [Symbol] -> [Symbol] -> Symbol -> [Rule] -> Grammar
-newGrammarNoChecks nts ts start rs = Grammar nts ts start rs
-
 -- generates new grammar with transformed rules so that simple rules are eliminated
 removeSimpleRules :: Grammar -> Grammar
-removeSimpleRules g = newGrammarNoChecks
+removeSimpleRules g = Grammar
     (nterms g)
     (terms g)
     (start g)
     (transformRules (rules g) (getReachableNonTerms (nterms g) (rules g)))
     where getReachableNonTerms [] _ = []
-          getReachableNonTerms (nt:nts) rs = [(nt, findSetN [nt] rs)] ++ getReachableNonTerms nts rs
+          getReachableNonTerms (nt:nts) rs = (nt, findSetN [nt] rs) : getReachableNonTerms nts rs
 
 -- applies NSet - the set of rules reachable by simple rules
 transformRules :: [Rule] -> [NSet] -> [Rule]
@@ -71,10 +66,9 @@ transformRules [] _ = []
 transformRules (r:rs) sets =
     (if isRuleSimple r
     then []
-    else generateNewRules r (map fst (filter (\x -> (fst r) `elem` (snd x)) sets)))
+    else generateNewRules r (map fst (filter (\x -> fst r `elem` snd x) sets)))
     ++ transformRules rs sets
-    where generateNewRules r [] = []
-          generateNewRules r (x:xs) = [(x, snd r)] ++ generateNewRules r xs
+    where generateNewRules r = foldr (\ x -> (++) [(x, snd r)]) []
 
 -- for every non-terminal symbol find all non-terminal symbols,
 -- that are reachable by simple rules
@@ -89,13 +83,11 @@ findSetN symbs rs =
 findSetNStep :: [Symbol] -> [Rule] -> [Symbol]
 findSetNStep symbs [] = symbs
 findSetNStep symbs (r:rs) =
-    (if
-        fst r `elem` symbs &&
-        isRuleSimple r &&
-        not ((head $ snd r) `elem` symbs)
-    then snd r
-    else [])
-    ++ findSetNStep symbs rs
+    foldr (\ r -> (++) 
+        (if fst r `elem` symbs && isRuleSimple r && (head (snd r) `notElem` symbs)
+         then snd r
+         else [])
+         ) symbs rs
 
 -- a simple rule is in form A->B where B is a non-terminal
 isRuleSimple :: Rule -> Bool
@@ -103,36 +95,36 @@ isRuleSimple r = length (snd r) == 1 && all isUpper (head $ snd r)
 
 -- removes duplicate values from a list
 removeDuplicates :: Ord b => [b] -> [b]
-removeDuplicates x = (map head . group . sort) x
+removeDuplicates = map head . group . sort
 
 -- takes a grammar and performs transformation to CNF
 transformToCNF :: Grammar -> Grammar
-transformToCNF g = newGrammarNoChecks
+transformToCNF g = Grammar
     (getNonTerminals (transformRulesToCNF g) (nterms g))
     (terms g)
     (start g)
     (transformRulesToCNF g)
-        where transformRulesToCNF g = removeDuplicates $ concat $ map parseRule $ rules g
-              getNonTerminals rs symbs = removeDuplicates $ (map fst rs ++ symbs)
+        where transformRulesToCNF g = removeDuplicates $ concatMap parseRule (rules g)
+              getNonTerminals rs symbs = removeDuplicates (map fst rs ++ symbs)
 
 -- takes one rule and generates corresponding rules based on the CNF algorithm
 parseRule :: Rule -> [Rule]
 parseRule r
     -- r is like A -> a, just keep this rule
-    | (length $ snd r) == 1 && all isLower (head $ snd r) = [r]
+    | length (snd r) == 1 && all isLower (head $ snd r) = [r]
     
     -- r is like A -> BC, just keep this rule
-    | (length $ snd r) == 2 && (all isUpper $ concat (snd r)) = [r] 
+    | length (snd r) == 2 && all isUpper (concat (snd r)) = [r] 
     
     -- r is like A -> bc, we need to generate (1) A -> b'c' and (2) terminal rules (a' -> a)
-    | (length $ snd r) == 2 = [(fst r, map commify (snd r))]
-        ++ generateTerminalRule (snd r !! 0)
+    | length (snd r) == 2 = [(fst r, map commify (snd r))]
+        ++ generateTerminalRule (head (snd r))
         ++ generateTerminalRule (snd r !! 1)
         
     -- r is like A -> abcd, we need to generate (1) A -> a'<bcd> and (2) terminal rule (a' -> a)
     -- and (3) rules which decompose the <bcd> non-terminal
-    | (length $ snd r) > 2 =
-        [(fst r, [commify (head $ snd r)] ++ ["<" ++ (concat $ tail $ snd r) ++ ">"])]
+    | length (snd r) > 2 =
+        [(fst r, commify (head $ snd r) : ["<" ++ concat (tail $ snd r) ++ ">"])]
         ++ generateTerminalRule (head $ snd r)
         ++ parseComposedNonTerm (concat $ tail $ snd r) 
         
@@ -145,14 +137,14 @@ parseComposedNonTerm rs
     -- if non-terminal len is > 2, we need (1) <ABCD> -> a'<BCD> and (2) terminal rule a' -> a
     -- and (3) further decompose remaining non-terminal <BCD>
     | length rs > 2 = [("<" ++ rs ++ ">", [commify [head rs], "<" ++ tail rs ++ ">"])]
-        ++ generateTerminalRule ([head rs])
+        ++ generateTerminalRule [head rs]
         ++ parseComposedNonTerm (tail rs)
         
     -- if non-terminal len is 2, (A -> <BC>) we need to generate (1) <BC> -> BC and
     -- (2) terminal rules (b' -> b)
     | length rs == 2 = [("<" ++ rs ++ ">", [commify [head rs] ++ commify (tail rs)])]
-        ++ generateTerminalRule ([rs !! 0])
-        ++ generateTerminalRule ([rs !! 1])
+        ++ generateTerminalRule [head rs]
+        ++ generateTerminalRule [rs !! 1]
         
     -- no other rule is possible here
     | otherwise = error ("bad rule: " ++ show rs)
@@ -160,7 +152,7 @@ parseComposedNonTerm rs
 -- generates rule for terminal in form: a' -> a
 -- if the input is non-terminal, no rule is needed
 generateTerminalRule :: Symbol -> [Rule]
-generateTerminalRule s = if all isLower s then [(s ++ "'", [s])] else []
+generateTerminalRule s = [(s ++ "'", [s]) | all isLower s]
 
 -- adds comma to terminals only, ignores non-terminals
 commify :: Symbol -> Symbol
@@ -170,7 +162,7 @@ commify s = if all isLower s then s ++ "'" else s
 readGrammarFromStr :: [String] -> Grammar
 readGrammarFromStr (l1:l2:l3:ls) =
     newGrammar (splitOn "," l1) (splitOn "," l2) l3
-        (map (\x -> (head x, map (:[]) $ concat (tail x))) (map (splitOn "->") ls))
+        (map ((\ x -> (head x, map (: []) $ concat (tail x))) . splitOn "->") ls)
 readGrammarFromStr _ = error "bad input format"
 
 -- command -i: load and print the grammar
@@ -200,9 +192,9 @@ main = do
         let command = head args
 
         -- read the input from file or stdin
-        contents <- (if length args == 2
-                     then readFile $ last args
-                     else getContents)
+        contents <- if length args == 2
+                    then readFile $ last args
+                    else getContents
 
         -- execute the command
         case lookup command dispatch of
