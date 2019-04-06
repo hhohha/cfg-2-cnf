@@ -81,13 +81,12 @@ findSetN symbs rs =
 
 -- one iteration of findSetN
 findSetNStep :: [Symbol] -> [Rule] -> [Symbol]
-findSetNStep symbs [] = symbs
-findSetNStep symbs (r:rs) =
-    foldr (\ r -> (++) 
+findSetNStep symbs rs =
+    foldr (\ r -> (++)
         (if fst r `elem` symbs && isRuleSimple r && (head (snd r) `notElem` symbs)
-         then snd r
-         else [])
-         ) symbs rs
+        then snd r
+        else [])
+        ) symbs rs
 
 -- a simple rule is in form A->B where B is a non-terminal
 isRuleSimple :: Rule -> Bool
